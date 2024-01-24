@@ -1,6 +1,9 @@
 ---
 title: "Final Project demo Website"
 author: "Jingyi Yang"
+format:
+  html: 
+      df-print: paged
 ---
 
 ```{r setup, include=TRUE, warning=FALSE, error=FALSE}
@@ -31,7 +34,7 @@ This data set consists of information about the health conditions among children
 ```{r Import the data_health, include=TRUE}
 health <- read_csv("~/DACSS-601/Final Project/Health_conditions_among_children_under_age_18__by_selected_characteristics__United_States.csv")
 
-health %>% print(n= 10, width = Inf)
+health
 ```
 
 # Clean the data set
@@ -60,7 +63,7 @@ health_clean <- health %>%
   mutate("percentage_high"= percentage+se, "percentage_low"= percentage-se )
   
 
-health_clean %>% print(n= 10, width = Inf)
+health_clean 
 ```
 
 # Insight (Describe the Statistics)
