@@ -1,0 +1,486 @@
+---
+title: "Final Project demo Website"
+author: "Jingyi Yang"
+---
+
+```{r setup, include=TRUE, warning=FALSE, error=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+library(tidyverse)
+library(ggplot2)
+library(readr)
+library(readxl)
+library(stringr)
+library(dplyr)
+library(lubridate)
+library("khroma")
+library(here)
+library("ggthemes")
+library(gt)
+```
+
+# Overview
+
+My final project mainly analyzes the health conditions among children under 18 based on some particular demographics from 1997 to 2018.
+
+# Data
+
+The data needed for analysis is downloaded from [data.gov](https://catalog.data.gov/dataset/health-conditions-among-children-under-age-18-by-selected-characteristics-united-states-53b56). The original data has been published from Centers for Disease Control and Prevention in Jun 2021.
+
+This data set consists of information about the health conditions among children under 18 years old based on particular population characteristics. It can help get information regarding the illness that is prevalent among minors, the percentage of children for each illness based on the different demographic characteristics, and more.
+
+```{r Import the data_health, include=TRUE}
+health <- read_csv("~/DACSS-601/Final Project/Health_conditions_among_children_under_age_18__by_selected_characteristics__United_States.csv")
+
+health %>% print(n= 10, width = Inf)
+```
+
+# Clean the data set
+
+# Overview
+
+The data set includes 16 columns. The column "INDICATOR" consists of the information about the whole data set, which is "Health conditions among children under age 18" and is a characteristic variable. The column "PANEL" is a characteristic variable and includes information about various health issues. The column "PANEL_NUM" represents the code for different health issues. The column "UNIT" indicates the number in the data set focused on percentage. "UNIT_NUM" refers to the code representing the characteristic variables in the "UNIT" column. "STUB_NAME" includes different characteristics for the respondents, like age, race, sex, etc., and the "STUB_NAME_NUM" shows the codes related to them. "STUB_LABEL" means the sub-variables related to the characteristics, like different age groups, female and male for the gender, and column "STUB_LABEL_NUM" involves the number representing them. "YEAR" includes information about different year stages, "YEAR_NUM" represents them, "AGE" and "AGE_NUM" include different age stages and numbers represent them, "ESTIMATE" is the number percent of children, "SE" means the standard error. In the "FLAG" column, "---" means the data is not available, and "\*" means the estimate might not be reliable. A [document](https://www.cdc.gov/nchs/data/hus/2019/012-508.pdf) provided by the Centers for Disease Control and Prevention (CDC) can provide more information.
+
+To clean the data, delete the columns that include some repeat information, like the number representing the variables, the columns that only include one piece of information, like the "INDICATOR" column, and the rows that contain the not available cells, are necessary. Besides, arranging the table through "PANEL" and "YEAR," renaming the column, and using the information in the "SE" column (standard error) to calculate the upper and lower percentage information will make the table more in order and easier to understand.
+
+```{r}
+health_clean <- health %>%
+  select(- ("PANEL_NUM"),
+         - ("UNIT_NUM"),
+         -("STUB_NAME_NUM"),
+         -("STUB_LABEL_NUM"),
+         -("AGE_NUM"),
+         - ("INDICATOR"),
+         - ("UNIT"),
+         - ("AGE"),
+         - ("FLAG"))%>%
+  arrange(PANEL, YEAR)%>%
+  na.omit()%>%
+  rename("illness"=`PANEL`, "characteristics"=`STUB_NAME`, "sub_name"=`STUB_LABEL`, "year"= `YEAR`, "year_number"= `YEAR_NUM`, "percentage"=`ESTIMATE`, "se"=`SE`) %>%
+   mutate(illness= str_remove(illness, "among persons under 18 years"))%>%
+  mutate("percentage_high"= percentage+se, "percentage_low"= percentage-se )
+  
+
+health_clean %>% print(n= 10, width = Inf)
+```
+
+# Insight (Describe the Statistics)
+
+```{r}
+freq_sumary_table_1 <-health_clean %>%
+   count(illness)%>%
+   mutate(prop= sum(n)/n)%>%
+   mutate(prop= prop/100)%>%
+   mutate(prop=scales::percent(prop))%>%
+  rename(Names=illness)
+
+freq_sumary_table_2 <- health_clean %>%
+  count(characteristics)%>%
+   mutate(prop= sum(n)/n)%>%
+   mutate(prop= prop/100)%>%
+   mutate(prop=scales::percent(prop))%>%
+  rename(Names=characteristics)
+
+freq_sumary_table_3 <- health_clean %>%
+  count(sub_name)%>%
+   mutate(prop= sum(n)/n)%>%
+   mutate(prop= prop/100)%>%
+   mutate(prop=scales::percent(prop)) %>%
+  rename(Names=sub_name)
+
+freq_sumary_table_4 <- health_clean %>%
+ count(year)%>%
+   mutate(prop= sum(n)/n)%>%
+   mutate(prop= prop/100)%>%
+   mutate(prop=scales::percent(prop))%>%
+  rename(Names=year)
+
+freq_sumary_table <-bind_rows(freq_sumary_table_1,freq_sumary_table_2,freq_sumary_table_3, freq_sumary_table_4)
+
+ freq_sumary_table%>%
+   gt()
+```
+
+As the summary for the variable "percentage" cannot clearly reflect the data variation, which does not help to define using mean or median for future analysis, further calculating the mean, median, standard deviation, and range based on various illnesses and demographic characteristics is necessary.
+
+```{r}
+  numerical_summary_table <- health_clean%>%
+  group_by (illness, characteristics) %>%
+  summarise(mean_percentage= mean(percentage), median_percentage=median(percentage), sd_percentage= sd(percentage),range_percentage= max(percentage)-min(percentage), max_percentage= max(percentage), min_percentage= min(percentage))%>%
+mutate(extrem_value_range_percentage_max= mean_percentage+3*sd_percentage, extrem_value_range_percentage_min= mean_percentage-3*sd_percentage)
+ 
+numerical_summary_table %>%
+  gt()
+```
+
+As all the numbers fit in the range mean+/-3(standard deviation), there is no extreme value in the data set, which means using the mean to analyze the percentage of children provided in the data set is appropriate.
+
+# Research questions
+
+1)  Which illness is most common? In this particular illness, how does the percentage for demographic characteristics change over time, and What do the demographic characteristics look like?
+
+2)  Which percentage of illness increased most over time? How does the percentage of demographic characteristics change over time in this particular illness?
+
+3)  Based on the "insurance" demographic characteristics, what is the trend of various illnesses over time? Can we define which illness is most common among those in "insured" status and those not?
+
+4)  Can we define the trend of the percentage of illness based on the poverty rate over time? Which illness is most common in various poverty rates?
+
+## Question 1
+
+### Question 1.1: Which illness is most common?
+
+```{r}
+health_clean %>%
+  group_by(illness)%>%
+  summarise(mean= mean(percentage), mean_high= mean(percentage_high), mean_low= mean(percentage_low))%>%
+  ungroup()%>%
+  mutate(mean=mean/100, mean_high= mean_high/100, mean_low= mean_low/100)%>%
+  mutate(labels=scales::percent(mean))%>%
+  ggplot(aes(illness, mean, fill=illness))+
+  geom_col(position = "dodge")+
+  geom_errorbar(aes(ymin=mean_low,ymax=mean_high))+
+  scale_x_discrete(name= "Illness")+
+  scale_y_continuous(limits= range(0,0.3), label = scales::percent, name = "Percentage of mean")+
+  scale_fill_discrete(name= "Illness")+
+   ggthemes::theme_few()+
+  theme(axis.text.x = element_text(angle=90))+
+  theme(legend.position = "bottom", legend.key.size = unit(0.1, 'cm'), legend.text = element_text(size=7), legend.title = element_text(size=10))+
+  geom_text(aes(label = labels), size=3, vjust=-.5)+
+  labs(title = "Mean For Various Illness")+
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+According to the graphic above, "Hay fever or respiratory allergy among persons under 18 years" is the most common illness.
+
+### Question 1.2 In this particular illness, how does the percentage for demographic characteristics change over time?
+
+```{r}
+health_clean %>%
+  filter(str_detect(illness,"respiratory"))%>%
+  mutate(percentage= percentage/100)%>%
+   ggplot(aes(year_number, percentage, col=sub_name))+
+ geom_line()+
+  facet_wrap(vars(characteristics), labeller = label_wrap_gen(width=25))+
+  ggthemes::theme_few()+
+  scale_x_continuous(n.break=8, name= "Year Number")+
+  scale_y_continuous(label = scales::percent, name = "Percentage of characteristics")+
+  scale_color_discrete(name= "Sub-name of characteristics")+
+   guides(col=guide_legend(nrow=6))+
+  theme(legend.position = "bottom", legend.key.size = unit(0.1, 'cm'), legend.text = element_text(size=7), legend.title = element_text(size=6))+
+  labs(title = "Percentages for various characteristics-Hay fever or respiratory allergy")+
+  theme(plot.title = element_text(hjust=0.5))+
+  theme(strip.text = element_text(size=7))
+```
+
+According to the graphic, the trends for all characteristics overtime are going down, except the "Two or more races" in the "Race" category.
+
+### Questions 1.3 What do the demographic characteristics look like?
+
+#### Insurance Level
+
+```{r}
+health_clean %>%
+  filter(str_detect(illness,"respiratory")& str_detect(characteristics, "insurance"))%>%
+  group_by(sub_name)%>%
+  summarise(mean= mean(percentage),mean_high= mean(percentage_high), mean_low= mean(percentage_low))%>%
+  ungroup()%>%
+  mutate(mean=mean/100, mean_high= mean_high/100, mean_low= mean_low/100)%>%
+  mutate(labels=scales::percent(mean))%>%
+  ggplot(aes(sub_name, mean, fill=sub_name))+
+  geom_col(position = "dodge")+
+  geom_errorbar(aes(ymin=mean_low,ymax=mean_high))+
+scale_x_discrete(name= "Insurance Status")+
+  scale_y_continuous(limits= range(0,0.25),label = scales::percent, name = "Percentage of mean")+
+  scale_fill_discrete(name= "Health insurance status at the time of interview")+
+   ggthemes::theme_few()+
+  theme(legend.position = "bottom")+
+  geom_text(aes(label = labels), size=5, vjust=-1)+
+  labs(title = "Mean percentage for various insuranced categories and uninsured category-Hay fever or respiratory allergy")+
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+According to the graphic, the "Insured: Private" have the highest percentage of mean.
+
+```{r}
+health_clean %>%
+  filter(str_detect(illness,"respiratory")& str_detect(characteristics, "insurance"))%>%
+  mutate(sub_name= str_remove(sub_name, ": Medicaid$|: Private$"))%>%
+  group_by(sub_name)%>%
+  summarise(mean= mean(percentage),mean_high= mean(percentage_high), mean_low= mean(percentage_low))%>%
+  ungroup()%>%
+  mutate(mean=mean/100, mean_high= mean_high/100, mean_low= mean_low/100)%>%
+  mutate(labels=scales::percent(mean))%>%
+  ggplot(aes(sub_name, mean, fill=sub_name))+
+  geom_col(position = "dodge")+
+scale_x_discrete(name= "Insurance Status- Insured and Uninsured")+
+  geom_errorbar(aes(ymin=mean_low,ymax=mean_high))+
+  scale_y_continuous(limits= range(0,0.25),label = scales::percent, name = "Percentage of mean")+
+  scale_fill_discrete(name= "Health insruance status")+
+  geom_errorbar(aes(ymin=mean_low,ymax=mean_high))+
+   ggthemes::theme_few()+
+  theme(legend.position = "bottom")+
+  geom_text(aes(label = labels), size=5, vjust=-1)+
+  labs(title = "Mean percentage for insured and uninsured-Hay fever or respiratory allergy")+
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+According to the graphic, mean percentage for children who are in the Insured status is higher than those who are not.
+
+#### Poverty Level
+
+```{r}
+health_clean %>%
+  filter(str_detect(illness,"respiratory")& str_detect(characteristics , "poverty"))%>%
+   mutate(sub_name=factor(sub_name,levels=c("Below 100%", "100%-199%", "200%-399%","400% or more"))) %>%
+  group_by(sub_name)%>%
+  summarise(mean= mean(percentage), mean_high= mean(percentage_high), mean_low= mean(percentage_low))%>%
+  ungroup()%>%
+  mutate(mean=mean/100, mean_high= mean_high/100, mean_low= mean_low/100)%>%
+  mutate(labels=scales::percent(mean))%>%
+  ggplot(aes(sub_name, mean, fill=sub_name))+
+  geom_col(position = "dodge")+
+geom_errorbar(aes(ymin=mean_low,ymax=mean_high))+
+scale_x_discrete(name= "Percent of poverty level")+
+  scale_y_continuous(limits= range(0,0.3),label = scales::percent, name = "Percentage of mean")+
+  scale_fill_discrete(name= "Percent of poverty level")+
+   ggthemes::theme_few()+
+  theme(legend.position = "bottom")+
+  geom_text(aes(label = labels), size=5, vjust=-1)+
+  labs(title = "Mean percentage for various poverty level-Hay fever or respiratory allergy")+
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+According to the graphic, "400% or more" have the highest percentage rate.
+
+#### Race
+
+```{r}
+health_clean %>%
+  filter(str_detect(illness,"respiratory")& str_detect(characteristics, "Race"))%>%
+  group_by(sub_name)%>%
+  summarise(mean= mean(percentage), median=median(percentage), mean_high= mean(percentage_high), mean_low= mean(percentage_low))%>%
+  ungroup()%>%
+  mutate(mean=mean/100, median= median/100, mean_high= mean_high/100, mean_low= mean_low/100)%>%
+  mutate(labels=scales::percent(mean))%>%
+  ggplot(aes(sub_name, mean, fill=sub_name))+
+  geom_col(position = "dodge")+
+scale_x_discrete(name= "Race")+
+  scale_y_continuous(limits= range(0,0.3),label = scales::percent, name = "Percentage of mean")+
+  scale_fill_discrete(name= "Race")+
+   ggthemes::theme_few()+
+  guides(fill=guide_legend(nrow=3))+
+  theme(axis.text.x = element_text(angle=90))+
+  theme(legend.position = "bottom")+
+  geom_text(aes(label = labels), size=5, vjust=-1)+
+  labs(title = "Mean percentage for various race-Hay fever or respiratory allergy")+
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+According to the graphic, "400% or more" have the highest percentage rate.
+
+#### Sex
+
+```{r}
+health_clean %>%
+  filter(str_detect(illness,"respiratory")& str_detect(characteristics, "Sex"))%>%
+  group_by(sub_name)%>%
+  summarise(mean= mean(percentage), mean_high= mean(percentage_high), mean_low= mean(percentage_low))%>%
+  ungroup()%>%
+  mutate(mean=mean/100, mean_high= mean_high/100, mean_low= mean_low/100)%>%
+  mutate(labels=scales::percent(mean))%>%
+  ggplot(aes(sub_name, mean, fill=sub_name))+
+  geom_col(position = "dodge")+
+  geom_errorbar(aes(ymin=mean_low,ymax=mean_high))+
+scale_x_discrete(name= "Sex")+
+  scale_y_continuous(limits= range(0,0.3),label = scales::percent, name = "Percentage of mean")+
+  scale_fill_discrete(name= "Sex")+
+   ggthemes::theme_few()+
+  theme(axis.text.x = element_text(angle=90))+
+  theme(legend.position = "bottom")+
+  geom_text(aes(label = labels), size=5, vjust=-1)+
+  labs(title = "Mean percentage for Sex-Hay fever or respiratory allergy")+
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+According to the graphic, the "Male" have higher mean percentage.
+
+#### Age
+
+```{r}
+health_clean %>%
+  filter(str_detect(illness,"respiratory")& str_detect(characteristics, "Age"))%>%
+   mutate(sub_name=factor(sub_name,levels=c("0-4 years", "5-17 years","5-9 years", "10-17 years")))%>%
+  group_by(sub_name)%>%
+  summarise(mean= mean(percentage), median=median(percentage), mean_high= mean(percentage_high), mean_low= mean(percentage_low))%>%
+  ungroup()%>%
+  mutate(mean=mean/100, median= median/100, mean_high= mean_high/100, mean_low= mean_low/100)%>%
+  mutate(labels=scales::percent(mean))%>%
+  ggplot(aes(sub_name, mean, fill=sub_name))+
+  geom_col(position = "dodge")+
+  geom_errorbar(aes(ymin=mean_low,ymax=mean_high))+
+scale_x_discrete(name= "Age")+
+  scale_y_continuous(limits= range(0,0.3),label = scales::percent, name = "Percentage of mean")+
+  scale_fill_discrete(name= "Age")+
+   ggthemes::theme_few()+
+  theme(axis.text.x = element_text(angle=90))+
+  theme(legend.position = "bottom")+
+  geom_text(aes(label = labels), size=5, vjust=-1)+
+  labs(title = "Mean percentage for Age-Hay fever or respiratory allergy")+
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+According to the graphic, the "10-17 years old" have higher mean percentage.
+
+##Question 2
+
+### Question 2.1 Which percentage of illness increased most over time?
+
+```{r}
+health_clean %>%
+  group_by(illness, year, `year_number`)%>%
+  summarise(mean= mean(percentage), median=median(percentage))%>%
+  ungroup()%>%
+  mutate(mean=mean/100, median= median/100)%>%
+  mutate(labels=scales::percent(mean))%>%
+  ggplot(aes(year_number, mean, col= illness))+
+  geom_path()+
+  ggthemes::theme_few()+
+  scale_x_continuous(n.break=8, name= "Year Number")+
+  scale_y_continuous(label = scales::percent, name = "Percentage of illness")+
+  scale_color_discrete(name= "Illness")+
+   guides(col=guide_legend(nrow=4))+
+  theme(legend.position = "bottom")+
+  labs(title = "Trends For Various Illness overtime")+
+  theme(plot.title = element_text(hjust=0.5))+
+  theme(strip.text = element_text(size=7))
+```
+
+According to the graphic,Skin Allergy is the illness that increase most overtime.
+
+### Question 2.2 How does the percentage of demographic characteristics change over time in this particular illness?
+
+```{r}
+health_clean %>%
+  filter(str_detect(illness,"Skin"))%>%
+  mutate(percentage= percentage/100)%>%
+   ggplot(aes(year_number, percentage, col=sub_name))+
+ geom_line()+
+  facet_wrap(vars(characteristics), labeller = label_wrap_gen(width=25), scale= "free")+
+  ggthemes::theme_few()+
+  scale_x_continuous(n.break=8, name= "Year Number")+
+  scale_y_continuous(label = scales::percent, name = "Percentage of characteristics")+
+  scale_color_discrete(name= "Sub-name of characteristics")+
+   guides(col=guide_legend(nrow=6))+
+  theme(legend.position = "bottom", legend.key.size = unit(0.1, 'cm'), legend.text = element_text(size=7), legend.title = element_text(size=6))+
+  labs(title = "Percentages for various characteristics")+
+  theme(plot.title = element_text(hjust=0.5))+
+  theme(strip.text = element_text(size=7))
+```
+
+According to the graphic, almost all the demographic characteristics are in the increased trend overtime.
+
+## Question 3
+
+### Question 3.1 Based on the "insurance" demographic characteristics, what is the trend of various illnesses over time?
+
+```{r}
+health_clean %>%
+  filter(str_detect(characteristics,"insurance")) %>%
+  mutate(percentage= percentage/100)%>%
+ggplot(aes(year_number, percentage,col=sub_name))+
+  geom_line()+
+  facet_wrap(vars(illness), labeller = label_wrap_gen(width=25), scales = "free")+
+  ggthemes::theme_few()+
+  scale_x_continuous(n.break=8, name= "Year Number")+
+  scale_y_continuous(label = scales::percent, name = "Percentage of characteristics")+
+  scale_color_discrete(name= "Sub-name of characteristics")+
+   guides(col=guide_legend(nrow=2))+
+  theme(legend.position = "bottom")+
+  labs(title = " Percentages for various health insurance status overtime-various illness")+
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+According to the graphic, besides "Food allergy", "Skin allergy", and "ADHD", other illness are seems in the decline trends overtime.
+
+### Question 3.2 Can we define which illness is most common among those in "insured" status and those not?
+
+```{r}
+health_clean %>%
+  filter(str_detect(characteristics,"insurance")) %>%
+   mutate(sub_name= str_remove(sub_name, ": Medicaid$|: Private$"))%>%
+  group_by(illness, sub_name)%>%
+  summarise(mean= mean(percentage), mean_high= mean(percentage_high), mean_low= mean(percentage_low))%>%
+  ungroup()%>%
+  mutate(mean=mean/100,mean_high= mean_high/100, mean_low= mean_low/100)%>%
+  mutate(labels=scales::percent(mean)) %>%
+ggplot(aes(sub_name, mean,fill=sub_name))+
+  geom_col(position = "dodge")+
+  facet_wrap(vars(illness), labeller = label_wrap_gen(width=25))+
+scale_x_discrete(name= "Insurance Status")+
+  scale_y_continuous(limits= range(0,0.3),label = scales::percent, name = " Mean of percentage")+
+  scale_fill_discrete(name= "Insurance Status")+
+   ggthemes::theme_few()+
+  theme(legend.position = "bottom")+
+  geom_text(aes(label = labels), size=5, vjust=-1)+
+  labs(title = "Mean percentage for various insuance status-various illness")+
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+According to the graphic, "Hay fever or respiratory allergy" is the most common illness among those in "insured" status and those not.
+
+## Question 4
+
+### Question 4.1 Can we define the trend of the percentage of illness based on the poverty rate over time?
+
+```{r}
+health_clean %>%
+  filter(str_detect(characteristics,"poverty")) %>%
+  mutate(percentage= percentage/100)%>%
+ggplot(aes(year_number, percentage,col=sub_name))+
+  geom_line()+
+  facet_wrap(vars(illness), labeller = label_wrap_gen(width=25),scales = "free")+
+   ggthemes::theme_few()+
+  scale_x_continuous(n.break=8, name= "Percent of poverty level")+
+  scale_y_continuous(label = scales::percent, name = "Percentage of characteristics")+
+  scale_color_discrete(name= "Sub-name of characteristics")+
+   guides(col=guide_legend(nrow=2))+
+  theme(legend.position = "bottom")+
+  labs(title = "Percentages for various poverty level overtime- various illness")+
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+According to the graphic, besides "Food allergy" and "Skin allergy", other illness are seems in the decline trends overtime.
+
+### Question 4.2 Which illness is most common in various poverty rates?
+
+```{r}
+health_clean %>%
+  filter(str_detect(characteristics,"poverty")) %>%
+   mutate(sub_name=factor(sub_name,levels=c("Below 100%", "100%-199%", "200%-399%","400% or more")))%>%
+  group_by(illness, sub_name)%>%
+  summarise(mean= mean(percentage), mean_high= mean(percentage_high), mean_low= mean(percentage_low))%>%
+  ungroup()%>%
+  mutate(mean=mean/100, mean_high= mean_high/100, mean_low= mean_low/100)%>%
+  mutate(labels=scales::percent(mean))%>%
+ggplot(aes(sub_name, mean,fill=sub_name))+
+  geom_col(position = "dodge")+
+  facet_wrap(vars(illness), labeller = label_wrap_gen(width=25))+
+scale_x_discrete(name= "Percent of poverty level")+
+  scale_y_continuous(limits= range(0,0.3),label = scales::percent, name = " Mean of percentage")+
+  scale_fill_discrete(name= "Percent of poverty level")+
+   ggthemes::theme_few()+
+  theme(legend.position = "bottom")+
+  geom_text(aes(label = labels), size=3, vjust=-1)+
+  theme(axis.text.x = element_text(angle=90))+
+  labs(title = "Mean percentage for various poverty level-various illness")+
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+According to the graphic, "Hay fever or respiratory allergy" is the most common illness among those in various poverty level.
+
+# Reflection for visualization
+
+I think my visualization answers all the research questions I have so far. However, it might improved by making the insight part visualized and putting them into a same or multiple graphic.
+
+Another thing that can improved for visualization is 1) adding a label for the liner graphic, especially the graphic "Trends For Various Illness Over time," and 2) making the color differences more obvious when the legend contains a large amount of the variables. It is challenging, and more research is needed to achieve it, but it will make the graphic clearer to the viewer.
+
+For ways to improve, I do search some articles online, like [adding lable](https://r-graph-gallery.com/web-line-chart-with-labels-at-end-of-line.html) and [expanding the color palette](https://novyden.blogspot.com/2013/09/how-to-expand-color-palette-with-ggplot.html). As it is not working well, I might seek more materials or even ask for tutoring.
