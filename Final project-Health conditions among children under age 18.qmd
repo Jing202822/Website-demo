@@ -1,0 +1,783 @@
+---
+title: "Final Project- Demo"
+author: "Jingyi Yang"
+format:
+  html: 
+      df-print: paged
+bibliography: references.bib
+---
+
+```{r setup, include=TRUE, warning=FALSE, error=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+library(tidyverse)
+library(ggplot2)
+library(readr)
+library(stringr)
+library(dplyr)
+library("khroma")
+library(here)
+library("ggthemes")
+library(purrr)
+library(RColorBrewer)
+library(gghighlight)
+library(gt)
+```
+
+# Overview
+
+My final project mainly analyzes the health conditions among children under 18 based on some particular demographics from 1997 to 2018.
+
+# Data
+
+The data needed for analysis is downloaded from [data.gov](https://catalog.data.gov/dataset/health-conditions-among-children-under-age-18-by-selected-characteristics-united-states-53b56). The original data has been published from Centers for Disease Control and Prevention in Jun 2021[@healthc2023].
+
+This data set consists of information about the health conditions among children under 18 years old based on particular population characteristics. It can help get information regarding the illness that is prevalent among minors, the percentage of children for each illness based on the different demographic characteristics, and more.
+
+```{r Import the data_health, include=TRUE}
+health <- read_csv("~/DACSS-601/Final Project/Health_conditions_among_children_under_age_18__by_selected_characteristics__United_States.csv")
+
+health
+```
+
+# Overview & Clean the data set
+
+## Overview
+
+The data set includes 16 columns. The column "INDICATOR" consists of the information about the whole data set, which is "Health conditions among children under age 18" and is a characteristic variable. The column "PANEL" is a characteristic variable and includes information about various health issues. The column "PANEL_NUM" represents the code for different health issues. The column "UNIT" indicates the number in the data set focused on percentage. "UNIT_NUM" refers to the code representing the characteristic variables in the "UNIT" column. "STUB_NAME" includes different characteristics for the respondents, like age, race, sex, etc., and the "STUB_NAME_NUM" shows the codes related to them. "STUB_LABEL" means the sub-variables related to the characteristics, like different age groups, female and male for the gender, and column "STUB_LABEL_NUM" involves the number representing them. "YEAR" includes information about different year stages, "YEAR_NUM" represents them, "AGE" and "AGE_NUM" include different age stages and numbers represent them, "ESTIMATE" is the number percent of children, "SE" means the standard error. In the "FLAG" column, "---" means the data is not available, and "\*" means the estimate might not be reliable.
+
+A [document](https://www.cdc.gov/nchs/data/hus/2019/012-508.pdf) provided by the Centers for Disease Control and Prevention (CDC) provides some important notes for the data set. The demographic characteristics "Total" include information for all other races that are not shown separately and the unknown insurance status[@healthc2019]. Besides, the categories in the "Insurance status" characteristics are mutually exclusive, which means that the "Insured" category does not cover the information provided in the "Insured: private" and "Insured: Medicaid." It means that combining these three categories for future analysis is appropriate[@healthc2019].
+
+## Clean the data set
+
+To clean the data, delete the columns that include some repeat information, like the number representing the variables, the columns that only include one piece of information, like the "INDICATOR" column, and the rows that contain the not available cells, are necessary. Besides, arranging the table through "PANEL" and "YEAR," renaming the column, and using the information in the "SE" column (standard error) to calculate the upper and lower percentage information will make the table more in order and easier to understand.
+
+```{r}
+health_clean <- health %>%
+  select(- ("PANEL_NUM"),
+         - ("UNIT_NUM"),
+         -("STUB_NAME_NUM"),
+         -("STUB_LABEL_NUM"),
+         -("AGE_NUM"),
+         - ("INDICATOR"),
+         - ("UNIT"),
+         - ("AGE"),
+         - ("FLAG"))%>%
+  arrange(PANEL, YEAR)%>%
+  na.omit()%>%
+  rename("illness"=`PANEL`, "characteristics"=`STUB_NAME`, "sub_name"=`STUB_LABEL`, "year"= `YEAR`, "year_number"= `YEAR_NUM`, "percentage"=`ESTIMATE`, "se"=`SE`) %>%
+   mutate(illness= str_remove(illness, "among persons under 18 years"))%>%
+  mutate("percentage_high"= percentage+se, "percentage_low"= percentage-se )
+  
+
+health_clean 
+```
+
+# Insight: Describe the Statistics
+
+## Summary the characteristic variables
+
+The table below shows the frequency for each value and the proportion. It can show the number of these categorical variables in the data set, how they are distributed, and how often each value occurs compared to others[@conway].
+
+```{r}
+freq_sumary_table_illness <-health_clean %>%
+   count(illness)%>%
+   mutate(prop= sum(n)/n)%>%
+   mutate(prop= prop/100)%>%
+   mutate(prop=scales::percent(prop))
+
+freq_sumary_table_illness%>%
+  gt()
+
+freq_sumary_table_characteristics <- health_clean %>%
+  count(characteristics)%>%
+   mutate(prop= sum(n)/n)%>%
+   mutate(prop= prop/100)%>%
+   mutate(prop=scales::percent(prop))
+
+freq_sumary_table_characteristics%>%
+  gt()
+
+freq_sumary_table_sub_name <- health_clean %>%
+  count(sub_name)%>%
+   mutate(prop= sum(n)/n)%>%
+   mutate(prop= prop/100)%>%
+   mutate(prop=scales::percent(prop))
+
+freq_sumary_table_sub_name %>%
+  gt()
+
+freq_sumary_table_year <- health_clean %>%
+ count(year)%>%
+   mutate(prop= sum(n)/n)%>%
+   mutate(prop= prop/100)%>%
+   mutate(prop=scales::percent(prop))%>%
+  rename(Names=year)
+
+freq_sumary_table_year %>%
+  gt()
+```
+
+## Summary the numerical variables- percentage
+
+To summarize the numerical variables "percentage" (or percent of the students), grouping the variable into the different demographic categories based on various illnesses is necessary. The summary includes information about the central tendency of the percentage, including the mean and median. It aims to describe the center of distribution of data[@conwaya]. The summary also includes range, standard deviation, maximum, minimum, and quartile information. It shows the variability or the differences between values in this numerical variable and can determine whether or not the variable "percentage" contains the extreme variable[@conwaya] [@3.2-id].
+
+The formula used to determine the extreme variable, or outlier, is:
+
+1)  IQR = Q3 – Q1
+
+2)  upper fence=Q3 + (1.5 \* IQR)
+
+3)  lower fence=Q1 – (1.5 \* IQR)
+
+    [@3.2-id]
+
+```{r}
+q = c(.25, .5, .75)
+numerical_summary_table <- function(x) {
+  health_clean%>%
+  filter(str_detect(illness,x)) %>%
+  group_by (characteristics, year) %>%
+  summarise(mean_percentage= mean(percentage), median_percentage=median(percentage), sd_percentage= sd(percentage),range_percentage= max(percentage)-min(percentage), max_percentage= max(percentage), min_percentage= min(percentage), quant25 = quantile(percentage, na.rm=TRUE,probs = q[1]), quant50 = quantile(percentage,na.rm=TRUE, probs = q[2]),quant75 = quantile(percentage,na.rm=TRUE, probs = q[3]))%>%
+mutate(IQR=quant75- quant25,extrem_value_range_percentage_max= quant75 + (1.5 * IQR),extrem_value_range_percentage_min= quant25-(1.5 * IQR))
+
+} 
+ 
+illness_name <- unique(health_clean$illness)
+
+illness_name
+
+data_frame <- map(illness_name,numerical_summary_table)
+
+data_frame
+
+ADHD_numerical_summary <- data_frame[1] %>% as.data.frame() %>% mutate(Illness= "ADHD")
+
+ADHD_numerical_summary %>% gt()
+
+Asthma_attack_numerical_summary <- data_frame[2] %>% as.data.frame() %>% mutate(Illness="Asthma attack in last 12 months ") 
+
+Asthma_attack_numerical_summary %>% gt()
+
+Current_asthma_numerical_summary<- data_frame[3] %>% as.data.frame()%>% mutate(Illness="Current asthma")
+
+Current_asthma_numerical_summary %>% gt()
+
+Ear_infections_numerical_summary <- data_frame[4] %>% as.data.frame()%>% mutate(Illness="Ear infections")
+
+Ear_infections_numerical_summary %>% gt()
+
+Food_allergy_numerical_summary <- data_frame[5] %>% as.data.frame() %>% mutate(Illness="Food allergy")
+
+Food_allergy_numerical_summary %>% gt()
+
+Hay_fever_numerical_summary <- data_frame[6] %>% as.data.frame()%>% mutate(Illness="Hay fever or respiratory allergy")
+
+Hay_fever_numerical_summary %>% gt()
+                              
+Serious_emotional_numerical_summary <- data_frame[7] %>% as.data.frame() %>% mutate(Illness="Serious emotional or behavioral difficulties")
+
+Serious_emotional_numerical_summary %>% gt()
+
+Skin_allergy_numerical_summary <- data_frame[8] %>% as.data.frame() %>% mutate(Illness="Skin allergy")        
+
+Skin_allergy_numerical_summary %>% gt()
+```
+
+```{r}
+
+find_extrem_value_high<- function(df) {
+
+df%>%
+  filter(max_percentage>extrem_value_range_percentage_max) }
+
+find_extrem_value_low<- function(df) {
+df%>%
+  filter(min_percentage<extrem_value_range_percentage_min) }
+
+find_extrem_value_high(ADHD_numerical_summary)
+
+find_extrem_value_low(ADHD_numerical_summary)
+
+find_extrem_value_high(Asthma_attack_numerical_summary)
+
+find_extrem_value_low(Asthma_attack_numerical_summary)
+
+find_extrem_value_high(Ear_infections_numerical_summary)
+
+find_extrem_value_low(Ear_infections_numerical_summary)
+
+find_extrem_value_high(Food_allergy_numerical_summary)
+
+find_extrem_value_low(Food_allergy_numerical_summary)
+ 
+find_extrem_value_high(Hay_fever_numerical_summary)
+
+find_extrem_value_low(Hay_fever_numerical_summary)
+
+find_extrem_value_high(Serious_emotional_numerical_summary)
+
+find_extrem_value_low(Serious_emotional_numerical_summary)
+
+find_extrem_value_high(Skin_allergy_numerical_summary)
+
+find_extrem_value_low(Skin_allergy_numerical_summary)
+```
+
+As there are some extreme values in the percentage variable, the median will be more suitable than the mean for future analysis as extreme variables will not impact it.
+
+## About the year and year number
+
+As the "year" is the categorical variable and represents the range of years, it might not be suitable to use it to show the trend of the percentage of children changing over time by using the liner graphic. Instead, the year_number is a numerical variable and includes the information for various year ranges, so using it in future analysis is more appropriate. This section aims to show how the information in the "year" column matches the information in the "year_number" column, which hopes to make the graphic below easier to understand.
+
+```{r}
+unique(health_clean$year)%>%
+  as.data.frame()%>%
+  rename("Year Range"= ".") %>%
+mutate(Number= unique(health_clean$year_number))
+```
+
+# Research questions & Analysis
+
+## Research questions
+
+1.  How to combine the "Insured" sub-categories? After combination, which insurance status is higher? Insured or Uninsured? Which illness is more prevalent based on these two statuses?
+
+2.  What does the percent in the poverty level categories mean? How do we reorder the categories based on the definition? Which poverty level has a higher percentage? Which illness is more prevalent based on various poverty levels?
+
+3.  After display the trend of percentage for various illness over time, which illness is more prevalent over time? How does the percentage for different demographic characteristics change over time in this particular illness?
+
+4.  After display the trend of percentage for various illness over time, which percentage of children with illness increased most over time? How does this particular illness's percentage of demographic characteristics change over time?
+
+## Analysis
+
+### Question 1
+
+#### Question 1.1 How to combine the "Insured" sub-categories?
+
+```{r}
+insured_uninsured_calculate <- function(x) {
+
+table <- health_clean %>%
+  filter(str_detect(illness, x)& str_detect(characteristics, "insurance"))%>%
+  mutate(sub_name= str_remove(sub_name, ": Medicaid$|: Private$"))
+
+ Insured <- table %>%
+  filter(str_detect(sub_name,"Insured")) %>%
+group_by(illness, characteristics, sub_name, year, year_number) %>%
+  summarise(percentage= sum(percentage), percentage_high= sum(percentage_high), percentage_low= sum(percentage_low))
+
+ Uninsured <- table %>%
+  filter(str_detect(sub_name,"Uninsured"))%>%
+   select(!se)
+ 
+ table_final <- full_join(Insured, Uninsured)%>%
+  mutate(percentage= percentage/100)%>%
+    mutate(percentage_high=percentage_high/100)%>%
+    mutate(percentage_low= percentage_low/100)
+ 
+ return(table_final)}
+
+illness_variable <- unique(health_clean$illness)
+
+table_final_illness<- map_dfr(illness_variable, insured_uninsured_calculate)
+
+table_final_illness
+```
+
+As mentioned in the "Overview" section, combine three categories under "Insured," meaning full. Accordingly, this section uses functions like `str_remove()` and `summaries(sum())` to achieve it.
+
+#### Question 1.2 which insurance status is higher? Insured or Uninsured?
+
+```{r}
+median_percentage_insured_uninsured <- table_final_illness%>%
+  group_by(year, year_number, sub_name)%>%
+  summarise(median=median(percentage))
+
+median_percentage_insured_uninsured
+
+median_percentage_insured_uninsured %>%
+  ggplot(aes(year_number, median, col=sub_name))+
+  geom_line()+
+  geom_point()+
+  ggthemes::theme_few()+
+  scale_x_continuous(n.break=14, name= "Year Number")+
+  scale_y_continuous(label = scales::percent, name = " Median percentage for various insruance status", n.breaks = 10)+
+  scale_color_okabeito(name="Insurance Status")+
+  theme(legend.position = "bottom")+
+  labs(title = "Trends For Various Insurance Status Over Time")+
+  theme(plot.title = element_text(hjust=0.5))+
+  theme(strip.text = element_text(size=7))
+```
+
+Based on the graphic above, it is easy to see that [*insured*]{.underline} status has a higher median percentage.
+
+#### Question 1.3 Which illness is more prevalent based on these two statuses?
+
+```{r}
+insured_uninsured_viualization <- function(x){
+  table_final_illness %>%
+  filter(str_detect(sub_name, x)) %>%
+  ggplot(aes(year_number, percentage, col=illness))+
+  geom_line()+
+  geom_point()+
+  ggthemes::theme_few()+
+  scale_x_continuous(n.break=14, name= "Year Number")+
+  scale_y_continuous(label = scales::percent, name = "Percentage of Illness", n.breaks = 10)+
+  scale_color_brewer(palette = "Set2", name= "Illness")+
+  theme(legend.position = "bottom")+
+  theme(plot.title = element_text(hjust=0.5))+
+    guides(col=guide_legend(nrow=4))
+    }
+```
+
+```{r}
+Insured_graphic <- insured_uninsured_viualization("Insured")+
+  labs(title = "Percentage For Various Illness Over Time Based On Insured Status")
+
+Insured_graphic
+
+ Uninsured_graphic <- insured_uninsured_viualization("Uninsured")+
+  labs(title = "Percentage For Various Illness Over Time Based On Uninsured Status")
+
+Uninsured_graphic
+
+insured_uninsured_find_highest <- function(x) {
+
+table_final_illness%>%
+  filter(str_detect(sub_name, x))%>%
+  group_by(illness)%>%
+  summarise(max=max(percentage), min=min(percentage)) %>%
+  ungroup()%>%
+  summarise(highest_maximum= max(max), highest_minimal=max(min))
+}
+
+insured_uninsured_find_highest("Insured")
+
+
+Insured_graphic+
+  gghighlight(percentage<0.54, percentage>0.44)+
+  labs(title = "Most Prevalence Illness Over Time- Insured")
+
+insured_uninsured_find_highest("Uninsured")
+
+Uninsured_graphic+
+  gghighlight(percentage<0.16, percentage>0.109, label_key=illness)+
+  labs(title = "Most Prevalence Illness Over Time- Uninsured")
+```
+
+According to the graphic above, [*"Hay fever or respiratory allergy"*]{.underline} is the most common illness for both "Insured" and "Uninsured" status.
+
+### Question 2
+
+#### Question 2.1 What does the percent in the poverty level categories mean? How do we reorder the categories based on the definition?
+
+The percentage is computed using U.S. Census Bureau poverty thresholds and family income and size information[@healthc2019]. It can used to set the "poverty lines." [@2024fed2024]. The way to understand the percentage could be, for instance, the annual income for the "400% or more" percentage level is four times the annual income for the 100% level. Accordingly, the order for the categories within the poverty level should be "Below 100%", "100%-199%", "200%-399%", and "400% or more."
+
+```{r}
+reorder_poverty_level <- health_clean %>%
+  filter(str_detect(characteristics , "poverty"))%>%
+   mutate(sub_name=factor(sub_name,levels=c("Below 100%", "100%-199%", "200%-399%","400% or more")))
+
+reorder_poverty_level
+```
+
+#### Question 2.2 Which poverty level has a higher percentage?
+
+```{r}
+poverty_level<- reorder_poverty_level%>%
+  group_by(sub_name, year, year_number)%>%
+  summarise(median= median(percentage))%>%
+  mutate(median= median/100)
+
+poverty_level %>%
+  ggplot(aes(year_number, median, col=sub_name))+
+  geom_line()+
+  geom_point()+
+  ggthemes::theme_few()+
+  scale_x_continuous(n.break=14, name= "Year Number")+
+  scale_y_continuous(label = scales::percent, name = " Median Percentage for various poverty level", n.breaks = 10)+
+  scale_color_discrete(name="poverty level")+
+  theme(legend.position = "bottom")+
+  labs(title = "Trends For Various Poverty Level Over Time")+
+  theme(plot.title = element_text(hjust=0.5))+
+  theme(strip.text = element_text(size=7))+
+   guides(col=guide_legend(nrow=2))
+```
+
+The graphic above shows that the [*"100% and below"*]{.underline} poverty level has a higher median percentage.
+
+#### Question 2.3 Which illness is more prevalent based on various poverty levels?
+
+```{r}
+poverty_level_visualization <- function (x) {
+
+health_clean %>%
+  filter(str_detect(characteristics, "poverty"))%>%
+  filter(str_detect(sub_name, x))%>%
+    mutate(percentage=percentage/100)%>%
+    mutate(percentage_high=percentage_high/100)%>%
+    mutate(percentage_low=percentage_low/100)%>%
+  ggplot(aes(year_number, percentage, col=illness))+
+  geom_line()+
+  geom_point()+
+  ggthemes::theme_few()+
+  scale_x_continuous(n.break=14, name= "Year Number")+
+  scale_y_continuous(label = scales::percent, name = "Percentage of Illness", n.breaks = 10)+
+  scale_color_brewer(palette = "Set2", name= "Illness")+
+  theme(legend.position = "bottom")+
+  theme(plot.title = element_text(hjust=0.5))+
+    guides(col=guide_legend(nrow=4))
+}
+
+unique(poverty_level$sub_name)
+
+`Below 100% graphic` <- poverty_level_visualization ("Below 100%")+
+  labs(title = "Percentage Of Below 100% Over Time For Various Illness")
+
+`Below 100% graphic`
+
+`100%-199% graphic` <- poverty_level_visualization ("100%-199%")+
+   labs(title = "Percentage Of 100%-199% Over Time For Various Illness")
+
+`100%-199% graphic` 
+
+`200%-399% graphic` <- poverty_level_visualization("200%-399%")+
+  labs(title = "Percentage Of 200%-399% Over Time For Various Illness")
+
+`200%-399% graphic`
+
+`400% or more graphic`<- poverty_level_visualization("400% or more")+
+  labs(title = "Percentage Of 400% Or More Over Time For Various Illness")
+
+`400% or more graphic`
+```
+
+```{r}
+poverty_level_find_highest <- function(x) {
+
+
+health_clean %>%
+  filter(str_detect(characteristics, "poverty"))%>%
+  filter(str_detect(sub_name, x))%>%
+    mutate(percentage=percentage/100)%>%
+    mutate(percentage_high=percentage_high/100)%>%
+    mutate(percentage_low=percentage_low/100)%>%
+  group_by(illness)%>%
+  summarise(max=max(percentage), min=min(percentage)) %>%
+  ungroup()%>%
+    arrange(desc(max))
+}
+
+poverty_level_find_highest("Below 100%")
+
+`Below 100% graphic`+
+  gghighlight(max(percentage)== 0.149)+
+  labs(title = "Most Prevalence Illness Over Time- Below 100%")
+
+poverty_level_find_highest("100%-199%")
+
+`100%-199% graphic`+
+  gghighlight(max(percentage)== 0.16)+
+  labs(title = "Most Prevalence Illness Over Time- 100%-199%")
+
+poverty_level_find_highest("200%-399%")
+
+`200%-399% graphic`+
+  gghighlight(max(percentage)== 0.185)+
+  labs(title = "Most Prevalence Illness Over Time- 200%-399%")
+
+poverty_level_find_highest("400% or more")
+
+`400% or more graphic`+
+  gghighlight(min(percentage)>0.16)+
+  labs(title = "Most Prevalence Illness Over Time- 400% or more")
+```
+
+The graphics above show that [*"Hay fever or respiratory allergy"*]{.underline} is the most prevalent illness across various poverty levels.
+
+### Preparing for the Question 3 and Question 4
+
+As questions 3 and 4 are based on the trend of percentages for various illnesses over time, this part aims to prepare for future analysis, which presents the trend of percentages for various illnesses over time.
+
+```{r}
+illness_median <- health_clean %>%
+  group_by(illness, year, `year_number`)%>%
+  summarise(median= median(percentage))%>%
+  ungroup()%>%
+  mutate(median=median/100)%>%
+  mutate(labels=scales::percent(median))
+
+illness_median
+
+illness_change_over_time <- illness_median%>%
+  ggplot(aes(year_number, median, col= illness))+
+  geom_line()+
+  geom_point()+
+  ggthemes::theme_few()+
+  scale_x_continuous(n.break=8, name= "Year Number")+
+  scale_y_continuous(label = scales::percent, name = "Percentage of illness")+
+  scale_color_brewer(palette = "Dark2", name= "Illness")+
+   guides(col=guide_legend(nrow=4))+
+  theme(legend.position = "bottom")+
+  labs(title = "Trends For Various Illness Over Time")+
+  theme(plot.title = element_text(hjust=0.5))+
+  theme(strip.text = element_text(size=7))
+
+illness_change_over_time
+```
+
+### Question 3
+
+#### Question 3.1: Which illness is more prevalent over time?
+
+```{r}
+illness_median%>%
+  group_by(illness)%>%
+  summarise(max=max(median), min=min(median))%>%
+  summarise(largest_max= max(max), largest_minimal= max(min))
+
+illness_change_over_time+
+   gghighlight(median>0.14)
+```
+
+According to the graphic above, "Hay fever or respiratory allergy" is the most common illness.
+
+#### Question 3.2 How does the percentage for different demographic characteristics change over time in this particular illness?
+
+```{r}
+characteristic_division_respiratory <- function(x) {
+health_clean %>%
+  filter(str_detect(illness,"respiratory"))%>%
+  mutate(percentage= percentage/100)%>%
+    mutate(percentage_high=percentage_high/100)%>%
+    mutate(percentage_low= percentage_low/100)%>%
+  filter(str_detect(characteristics,x)) }
+
+Visualization <- function (df) {
+  
+  df%>%
+   ggplot(aes(year_number, percentage, col=sub_name))+
+ geom_line()+
+    geom_point()+
+  ggthemes::theme_few()+
+  scale_x_continuous(n.break=14, name= "Year Number")+
+  scale_y_continuous(label = scales::percent, name = "Percentage of characteristics", n.breaks = 10)+
+    geom_errorbar(aes(ymin=percentage_high,ymax=percentage_low, width=0.5))+
+  scale_color_discrete(name= "Sub-name of characteristics")+
+  theme(legend.position = "bottom")+
+  theme(plot.title = element_text(hjust=0.5))
+}
+
+characteristic_column <-unique(health_clean$characteristics)
+  
+ df<- map(characteristic_column, characteristic_division_respiratory) 
+  
+ Age_respiratory<- df[1]%>% as.data.frame()%>%
+   mutate(sub_name=factor(sub_name,levels=c("0-4 years", "5-17 years","5-9 years", "10-17 years")))
+ 
+ Age_respiratory
+ 
+ Visualization(Age_respiratory) +
+  labs(title = "Percentages For Age Over Time \n -Hay Fever Or Respiratory Allergy")+
+   guides(col=guide_legend(nrow=2))
+ 
+ sex_respiratory<- df[2]%>% as.data.frame()
+ 
+ sex_respiratory
+ 
+ Visualization(sex_respiratory)+
+  labs(title = "Percentages For Sex Over Time \n -Hay Fever Or Respiratory Allergy")
+ 
+ race_respiratory<- df[3]%>% as.data.frame()%>%
+ mutate(sub_name=factor(sub_name,levels=c("American Indian or Alaska Native only", "Asian only", "Black or African American only","White only", "2 or more races")))
+ 
+ race_respiratory
+ 
+ Visualization(race_respiratory)+
+  labs(title = "Percentages For Race Over Time \n -Hay Fever Or Respiratory Allergy")+
+   guides(col=guide_legend(nrow=3))
+ 
+hispanic_respiratory<- df[4]%>% as.data.frame()
+
+hispanic_respiratory 
+
+Visualization(hispanic_respiratory)+
+  labs(title = "Percentages For Hispanic Origin And Race Over Time \n -Hay Fever Or Respiratory Allergy")+
+   guides(col=guide_legend(nrow=4))
+
+poverty_respiratory<- df[5]%>% as.data.frame()%>%
+   mutate(sub_name=factor(sub_name,levels=c("Below 100%", "100%-199%", "200%-399%","400% or more")))
+
+poverty_respiratory
+
+Visualization(poverty_respiratory)+
+  labs(title = "Percentages For Poverty Level Over Time \n -Hay Fever Or Respiratory Allergy")+
+   guides(col=guide_legend(nrow=2))
+
+health_insurance_respiratory <-df[6]%>% as.data.frame()
+
+health_insurance_respiratory
+
+Visualization(health_insurance_respiratory)+
+  labs(title = "Percentages For Health insurance Status Over Time \n -Hay Fever Or Respiratory Allergy")+
+   guides(col=guide_legend(nrow=2))
+
+insured_uninsured_calculate("Hay fever or respiratory allergy")%>%
+  Visualization()+
+  labs(title = "Percentage For Insured And Uninsured Over Time \n -Hay Fever Or Respiratory Allergy")
+
+total_respiratory <- df[7] %>% as.data.frame()
+
+total_respiratory
+
+Visualization(total_respiratory)+
+  labs(title = "Percentages For Total Over Time \n -Hay fever or respiratory allergy")
+```
+
+Some observation for the graphics above:
+
+1)  The trends for all characteristics over time are going down, except the “Two or more races” in the “Race” category.
+2)  Based on "Hay fever or respiratory allergy" illness, the higher percentage for the different poverty levels over time is different from the previous analysis for the poverty level. The reason for the differences might be the analysis in question 2 includes multiple illnesses and is based on the percentage median.
+
+```{=html}
+<!-- -->
+```
+3)  Aged between 10-17 years old, Males are more likely to get "Hay fever or respiratory allergy" over time compared to other ages (which refers to 0-4 years old, 5-17 years old, and 5-9 years old) and sex groups (which refers to female).
+
+## #Question 4
+
+#### Question 4.1 which percentage of children with illness increased most over time?
+
+```{r}
+illness_median %>%
+  group_by(illness)%>%
+  summarise(max= max(median), min= min(median), range= max(median)-min(median)) %>%
+  arrange(desc(range))
+
+illness_change_over_time+
+   gghighlight(max(median)-min(median)>0.05)
+```
+
+According to the graphic, [*"Skin Allergy"*]{.underline} is the illness that increase most over time.
+
+#### Question 4.2 How does the percentage of demographic characteristics change over time in this particular illness?
+
+```{r}
+characteristic_division_skin <- function(x) {
+health_clean %>%
+  filter(str_detect(illness,"Skin"))%>%
+  mutate(percentage= percentage/100)%>%
+    mutate(percentage_high=percentage_high/100)%>%
+    mutate(percentage_low= percentage_low/100)%>%
+  filter(str_detect(characteristics,x)) }
+
+Visualization <- function (df) {
+  
+  df%>%
+   ggplot(aes(year_number, percentage, col=sub_name))+
+ geom_line()+
+    geom_point()+
+  ggthemes::theme_few()+
+  scale_x_continuous(n.break=14, name= "Year Number")+
+  scale_y_continuous(label = scales::percent, name = "Percentage of characteristics", n.breaks = 10)+
+    geom_errorbar(aes(ymin=percentage_high,ymax=percentage_low, width=0.5))+
+  scale_color_discrete(name= "Sub-name of characteristics")+
+  theme(legend.position = "bottom")+
+  theme(plot.title = element_text(hjust=0.5))
+}
+
+characteristic_column <-unique(health_clean$characteristics)
+  
+ df<- map(characteristic_column, characteristic_division_skin) 
+  
+ Age_skin<- df[1]%>% as.data.frame()%>%
+   mutate(sub_name=factor(sub_name,levels=c("0-4 years", "5-17 years","5-9 years", "10-17 years")))
+ 
+ Age_skin
+ 
+ Visualization(Age_skin) +
+  labs(title = "Percentages For Age Over Time \n -Skin Allergy")+
+   guides(col=guide_legend(nrow=2))
+ 
+ sex_skin<- df[2]%>% as.data.frame()
+ 
+ sex_skin
+ 
+ Visualization(sex_skin)+
+  labs(title = "Percentages For Sex Over Time \n -Skin Allergy")
+ 
+ race_skin<- df[3]%>% as.data.frame() %>%
+ mutate(sub_name=factor(sub_name,levels=c("American Indian or Alaska Native only", "Asian only", "Black or African American only","White only", "2 or more races")))
+
+ race_skin
+ 
+ Visualization(race_skin)+
+  labs(title = "Percentages For Race Over Time \n -Skin Allergy")+
+   guides(col=guide_legend(nrow=3))
+ 
+ 
+hispanic_skin<- df[4]%>% as.data.frame()
+
+hispanic_skin 
+
+Visualization(hispanic_skin)+
+  labs(title = "Percentages For Hispanic Origin And Race Over Time /n -Skin Allergy")+
+   guides(col=guide_legend(nrow=4))
+
+poverty_skin<- df[5]%>% as.data.frame() %>% mutate(sub_name=factor(sub_name,levels=c("Below 100%", "100%-199%", "200%-399%","400% or more")))
+
+poverty_skin
+
+Visualization(poverty_skin)+
+  labs(title = "Percentages For Poverty Level Over Time \n -Skin allergy")+
+   guides(col=guide_legend(nrow=2))
+
+health_insurance_skin <-df[6]%>% as.data.frame()
+
+health_insurance_skin
+
+Visualization(health_insurance_skin)+
+  labs(title = "Percentages For Health Insurance Status Over Time \n -Skin Allergy")+
+   guides(col=guide_legend(nrow=2))
+
+insured_uninsured_calculate("Skin allergy")%>%
+  Visualization()+
+  labs(title = "Percentage For Insured And Uninsured Over Time \n -Skin Allergy")
+
+total_skin <- df[7] %>% as.data.frame()
+
+total_skin
+
+Visualization(total_skin)+
+  labs(title = "Percentages For Total Over Time \n -Skin Allergy")
+```
+
+Some observations for the graphics above:
+
+1)  Almost all the demographic characteristics are increasing over time. However, the category "American Indian or Alaska Native only" within the "Race" demographic characteristic has a slightly downward trend.
+
+2)  The analysis for poverty levels for the "Skin Allergy" analysis shows that the percentage for levels "Below 100%" will sometimes be higher than other levels. This finding matches the observation in question but differs from when analyzing the "Hay fever or respiratory allergy" illness.
+
+3)  0-4 years old and female (except the 2012-2014 year range) are more likely to get "Skin Allergy" over time compared to other ages (which refers to 0-4 years old, 5-17 years old, and 5-9 years old) and sex groups (which refers to female).
+
+# Conclusion
+
+1.  "Hay fever or respiratory allergy" is the most prevalent illness. It is worth some attention because it is the most common illness overall when analyzing the trends for various diseases over time, but also when analyzing the insured-uninsured status and various poverty levels.
+
+2.  Besides the illness "Hay fever or respiratory allergy," "Skin allergy" also needs some attention as it is the illness that increases most over time.
+
+3.  It is suitable diving into the sub-categories for each demographic characteristic as different illnesses will have various constructions for sub-categories. It can provide some information about which groups of children are more likely to get this specific illness.
+
+4.  After combining the three sub-categories under the "Insured" status, it shows that the median percentage of children for "Insured" is higher than the median percentage for "Uninsured" status. It might be a good phenomenon, which shows that many children who suffer from those eight diseases are insured. However, it is still possible that the children with the insurance are more likely to go to the hospital, see the doctor, and be diagnosed.
+
+5.  For the poverty level, the sub-category "Below 100%" has a higher median percentage of children over time compared to other categories, which might show that many children suffering from those eight illnesses are at the "Below 100%" poverty level.
+
+# Limitation
+
+1.  Some percentages of children provided through the original data set are considered unreliable [@healthc2019].
+
+2.  The data set includes the information for standard error for estimates, but this project barely includes them when doing the analysis. The information related to standard error only appeared when visualizing the sub-group information for "Hay fever or respiratory allergy" and "Skin allergy."
+
+3.  Some graphics will be easier to understand if they contain the text or label at the end of each line.
+
+# Reference

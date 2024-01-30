@@ -6,8 +6,8 @@ website:
   title: "jingyi.github.io"
   navbar:
     left:
-      - href: demo website.qmd
-        text: Final Project
+      - href: Final project-Health conditions among children under age 18.qmd
+        text: Final Project-Health conditions among children under age 18
       
 
 format:
