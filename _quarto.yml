@@ -7,7 +7,7 @@ website:
   navbar:
     left:
       - href: Final project-Health conditions among children under age 18.qmd
-        text: Final Project-Health conditions among children under age 18
+        text: Final Project-Health conditions
       
 
 format:
